@@ -1,0 +1,299 @@
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+</head>
+<body>
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: sans-serif;
+    }
+    .char {
+        display: inline-block;
+        margin: 2pt;
+        border: 1px solid lightgray;
+        text-align: center;
+        width: 3em;
+        height: 3em;        
+    }
+    .score-correct {
+        color: green;
+    }
+    .score-wrong {
+        color: red;
+    }
+    #msgbox {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: lightgray;
+        color: black;
+        text-align: center;
+    }
+    #lesson-title {
+        width: 100%;
+        background-color: lightgray;
+        padding: 1em;
+        margin-bottom: 0.5em;
+    }
+    #wrapper {
+        overflow: hidden;
+        width: 100%;
+        height: 100%;
+    }
+</style>
+<div id="wrapper">
+    <div id="msgbox"></div>
+    <b><div id="lesson-title"></div></b>
+    <div id="trainer"></div>
+</div>
+<script src="LESSON_DATA.js"></script>
+<script>
+/// Strings
+var Msg = {
+    START: 'Press Escape to start',
+    END_F: function(numCorrect, numTotal){
+        return '<h2>End of lesson</h2><br>'+numCorrect+' correct of '+numTotal+'<br>(r) to repeat, (Enter) to continue';
+    },
+    START_LESSON_F: function(lessonIdx){
+        return '<h2>Starting lesson #'+(lessonIdx+1)+'</h2><br>(Enter) to start<br>To choose a different lesson (c)';
+    },
+    END_ALL: '<h2>End of all lessons</h2><br>(Enter) to repeat'
+};
+
+/// App
+var AppStage = {
+    START: 0,
+    IN_TRAINER: 1,
+    END: 2
+};
+
+var DOT_CHAR = "•";
+
+var appState;
+var appData;
+
+function start() {
+    appState = AppStage.START;
+    appData = {};
+    appData.lessonIdx = -1;
+    nextLesson();
+}
+start();
+
+function gotoLesson(idx) {
+    appData.lessonIdx = idx - 1;
+    nextLesson();
+}
+
+function repeatLesson() {
+    appData.lessonIdx -= 1;
+    nextLesson();
+}
+
+function nextLesson() {
+    if (appData.lessonIdx + 1 == LESSONS.length) {
+        showMessage(Msg.END_ALL, function() {
+            start();
+        });
+    }
+    else {
+        appData.lessonIdx++;
+        beforeStartLesson();
+    }
+}
+
+function beforeStartLesson() {
+    showMessage(Msg.START_LESSON_F(appData.lessonIdx), {
+        "Enter": startLesson,
+        "c": chooseLesson
+    });
+}
+
+function chooseLesson() {
+    
+    var selectionHtml = "<h2>Choose a lesson</h2><br/><select id='chooseLesson'>";
+    selectionHtml += LESSONS.map(function(lesson, idx){return "<option value='"+idx+"'>" + lesson.title + "</option>";}).join("");
+    selectionHtml += "</select><br/>(Enter) to choose, (Escape) to return";
+
+    showMessage(selectionHtml, {
+        "Enter": function() {
+            var idx = document.getElementById('chooseLesson').value;
+            gotoLesson(idx);
+        },
+        "Escape": beforeStartLesson // repeat
+    });
+}
+
+
+function startLesson() {
+    appState = AppStage.IN_TRAINER;
+
+    var chars = [];
+    var lesson = LESSONS[appData.lessonIdx];
+    var lessonData = lesson.data;
+    lessonData.forEach(function(guideChar) {
+        chars.push({
+            guideChar: guideChar,
+            actualChar: DOT_CHAR
+        });
+    });
+    appData.chars = chars; 
+    
+    appData.title = lesson.title;
+
+    appData.currPos = -1;
+    
+    render();            
+}
+
+
+function endOfLesson() {
+    appState = AppStage.END;
+    
+    // Calculate score
+    var numCorrect = 0;
+    appData.chars.forEach(function(char){
+        if (char.guideChar === char.actualChar) numCorrect++;
+    });
+    var numTotal = appData.chars.length;
+    
+    showMessage(Msg.END_F(numCorrect, numTotal), {
+        "Enter": nextLesson,
+        "r": repeatLesson
+    });
+}
+
+document.onkeyup = function(e) {
+
+    if (isMsgBoxActive()) {
+        msgBoxHandleKeyup(e);
+        return;
+    }
+
+    switch (appState) {    
+        case AppStage.IN_TRAINER:
+            trainerHandleKeyup(e);
+            break;
+        default:
+            break;
+    }    
+    
+};
+
+/// Trainer
+function render() {
+    var chars = appData.chars;
+    var elWrapper = document.getElementById("trainer");
+    elWrapper.innerHTML = createLine(chars);
+    var title = appData.title;
+    var elTitle = document.getElementById("lesson-title");
+    elTitle.innerHTML = title;
+}
+function createBlock(block, id) {
+    return '<div class="char" id="char-'+id+'">'
+    + '<div class="guide">'+block.guideChar+'</div>'
+    + '<div class="input'
+    + (block.isCorrect != undefined ? (block.isCorrect ? ' score-correct' : ' score-wrong') : '')
+    + '">'+block.actualChar+'</div></div>';
+}
+function createLine(blocks) {
+    return blocks.map(createBlock).join("");
+}
+
+var CharUtils = {
+    isMatra: function(key) {
+        var MATRAS = ['ൊ','ഃ','ൃ','ൌ','ൈ','ാ','ീ','ൂ','ോ','േ','്','ി','ു','െ','ം'];
+        var matches = false;
+        MATRAS.forEach(function(matra){if (key === matra) matches = true;});
+        return matches;
+    }
+};
+
+function trainerHandleKeyup(e) {
+    var key = e.key;
+    var chars = appData.chars;
+    var currPos = appData.currPos;
+    function incCurrPos() {
+        currPos++;
+        appData.currPos = currPos;        
+    }
+    
+    if (key === "Control" || key === "Alt" || key === "Meta" || key === "Shift" || key === "Tab" || key === "Escape") return;
+    if (currPos == -1) {
+        if (CharUtils.isMatra(key)) return;
+    }
+
+   
+    if (!CharUtils.isMatra(key)) {  // New character begins here
+        if (currPos > -1) scoreInputAtPosition(currPos);
+        if (currPos + 1 == chars.length) {
+            scoreInputAtPosition(currPos);
+            render();
+            endOfLesson();
+            return;
+        }
+    }
+    
+    if (CharUtils.isMatra(key)) {   // join with previous    
+        var prevChar = chars[currPos];
+        prevChar.actualChar += key;
+    }
+    else if (key === ' ') {
+        incCurrPos();
+        var currChar = chars[currPos];        
+        currChar.actualChar = DOT_CHAR;
+    }
+    else {
+        incCurrPos();
+        var currChar = chars[currPos];
+        currChar.actualChar = key;
+    }
+    
+    render();    
+}
+
+function scoreInputAtPosition(pos) {    
+    var char = appData.chars[pos];
+    char.isCorrect = char.guideChar === char.actualChar;
+}
+
+/// Message box
+function isMsgBoxActive() {
+    isMsgBoxActive.flag = isMsgBoxActive.flag || false;
+    return isMsgBoxActive.flag;
+}
+function showMessage(msg, callbacks) {
+    showMessage.callbacks = callbacks || function(){};
+    var elMsgBox = document.getElementById("msgbox");
+    elMsgBox.innerHTML = msg;
+    isMsgBoxActive.flag = true;
+    elMsgBox.style.display = "block";
+}
+function msgBoxHandleKeyup(e) {
+    if (typeof showMessage.callbacks === "function") {
+        if (e.key === "Enter") {
+            hideMessage();
+            showMessage.callbacks();
+        }        
+    } else if (typeof showMessage.callbacks === "object"){
+        for (key in showMessage.callbacks) {
+            if (e.key === key) {
+                hideMessage();
+                showMessage.callbacks[key]();
+            }
+        }
+    }
+}
+function hideMessage() {
+    var elMsgBox = document.getElementById("msgbox");
+    isMsgBoxActive.flag = false;
+    elMsgBox.style.display = "none";
+}
+
+</script>
+</body>
+</html>
